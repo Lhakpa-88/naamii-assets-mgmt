@@ -4,7 +4,12 @@
   var main = document.getElementById('main'), modal = document.getElementById('modal');
   var filters = { q: '', project: '', category: '', ownership: '', status: 'active', location: '', mine: null };
   var listFilter = { maintenance: 'open', disposals: 'all' };
-  var depFy = null, pendingImport = null;
+  var depFy = null, pendingImport = null, route = 'dashboard', ready = false, env = S.env;
+  function go(r) {
+    route = r || 'dashboard';
+    if (!env.hosted && location.hash !== '#/' + route) { location.hash = '#/' + route; return; }
+    render(); window.scrollTo(0, 0);
+  }
 
   /* ---------- helpers ---------- */
   function esc(v) {
@@ -16,6 +21,7 @@
   }
   function today() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   function st() { return S.state; }
+  function printBtn() { return env.hosted ? '' : '<button class="btn" data-action="print">Print</button>'; }
   function nameOf(list, code) { var r = S.find(list, code, 'code'); return r ? r.name : (code || ''); }
   function isExited(a) { return AMS.EXITED.indexOf(a.status) >= 0; }
   function toast(msg) {
@@ -107,7 +113,7 @@
 
   /* ---------- user ---------- */
   function userModal() {
-    var u = S.user || { name: '', role: 'logistics' };
+    var u = S.user || { name: env.profileName || '', role: 'logistics' };
     openModal('Who is using the system?', '<p class="sub">Your name is stamped on every record you add or change. Screens adapt to your role.</p><div class="grid">' +
       fieldHtml({ key: 'name', label: 'Your name', type: 'text', required: true }, u.name) +
       fieldHtml({ key: 'role', label: 'Role', type: 'select', required: true,
@@ -159,7 +165,8 @@
           }
           S.audit('Create', 'Asset', rec.id, rec.name + ' — ' + D.treatment(rec, st().settings));
           toast('Asset ' + rec.id + ' registered.');
-          location.hash = '#/asset/' + encodeURIComponent(rec.id);
+          route = 'asset/' + encodeURIComponent(rec.id);
+          if (!env.hosted) location.hash = '#/' + route;
         }
       });
 
@@ -412,7 +419,7 @@
     var def = MASTER[list];
     if (def.usedBy(code)) { toast('This ' + def.label + ' is used by assets and cannot be deleted.'); return; }
     confirmModal('Delete ' + def.label, 'Delete ' + code + '? This cannot be undone.', function () {
-      st()[list] = st()[list].filter(function (r) { return r.code !== code; });
+      S.remove(list, code);
       S.audit('Delete', def.label, code, '');
     }, 'Delete');
   }
@@ -516,7 +523,7 @@
       if (S.can('title.transfer') && a.ownership !== 'NAAMII') acts.push('<button class="btn dark" data-action="title" data-id="' + esc(a.id) + '">Transfer title to NAAMII</button>');
       if (S.can('disposal.propose') && !open) acts.push('<button class="btn" data-action="disp-new" data-id="' + esc(a.id) + '">Propose disposal / handover</button>');
     }
-    acts.push('<button class="btn" data-action="print">Print</button>');
+    if (!env.hosted) acts.push('<button class="btn" data-action="print">Print</button>');
 
     var accounting = cap
       ? '<div class="detail">' + cell('Treatment', 'Capitalised — NAAMII fixed asset') + cell('Depreciable value', 'NPR ' + money(D.depBase(a))) + cell('Depreciation start', esc(D.depStart(a))) +
@@ -591,7 +598,7 @@
   function viewDisposalNote(id) {
     var d = S.find('disposals', id); if (!d) return '<h1>Record not found</h1>';
     var a = S.find('assets', d.assetId) || {}, cell = function (l, v) { return '<div><span>' + esc(l) + '</span>' + (v || '—') + '</div>'; };
-    return '<div class="bar no-print"><a href="#/disposals">← Disposal and Handover</a><span class="grow"></span><button class="btn" data-action="print">Print</button></div>' +
+    return '<div class="bar no-print"><a href="#/disposals">← Disposal and Handover</a><span class="grow"></span>' + printBtn() + '</div>' +
       '<h1>' + esc(st().settings.orgName) + ' — Asset ' + esc(d.method === 'Handover to third party' || d.method === 'Return to funder' ? 'Handover' : 'Disposal') + ' Note</h1><p class="sub">' + esc(d.id) + ' · ' + badge(d.status) + '</p>' +
       '<div class="panel detail">' + cell('Asset ID', esc(a.id)) + cell('Asset name', esc(a.name)) + cell('Make / model', esc(a.makeModel)) + cell('Serial no', esc(a.serialNo)) + cell('Project', esc(a.projectCode || 'Core')) + cell('Title held by', esc(a.ownership) + (a.funder ? ' — ' + esc(a.funder) : '')) +
       cell('Acquired', esc(a.acquisitionDate)) + cell('Original cost', 'NPR ' + money(a.cost)) + cell('Condition', esc(a.condition)) + '</div>' +
@@ -639,7 +646,7 @@
     var memo = s.assets.filter(function (a) { return a.ownership !== 'NAAMII' && !isExited(a); });
     return '<h1>Depreciation</h1><p class="sub">Only assets whose title is with NAAMII appear here. ' + memo.length + ' funder / partner-owned asset(s) (memo cost NPR ' +
       money(memo.reduce(function (x, a) { return x + D.num(a.cost); }, 0)) + ') are excluded: they were expensed to their projects.</p>' +
-      '<div class="bar"><label>Fiscal year <select data-dep-fy>' + optionList(years, depFy) + '</select></label><span class="grow"></span><button class="btn" data-action="print">Print</button></div>' +
+      '<div class="bar"><label>Fiscal year <select data-dep-fy>' + optionList(years, depFy) + '</select></label><span class="grow"></span>' + printBtn() + '</div>' +
       '<h2>Fixed asset schedule — books (straight-line)</h2>' +
       table(['Asset ID', 'Asset', 'Cat.', 'Dep. start', { t: 'Life' }, { t: 'Value' }, { t: 'Opening accum.' }, { t: 'Dep. for year' }, { t: 'Closing accum.' }, { t: 'Net book value' }], slRows, 'No NAAMII-owned capitalised assets in this fiscal year.') +
       '<h2>Tax depreciation working — Income Tax Act 2058, Schedule 2 (pooled)</h2>' +
@@ -663,13 +670,15 @@
         '<span class="grow"></span><button class="btn" data-action="import-cancel">Cancel</button>' +
         (p.sheets.some(function (x) { return x.added + x.updated > 0; }) ? '<button class="btn primary" data-action="import-apply">Import valid rows</button>' : '') + '</div></div>';
     }
-    return '<h1>Import / Export</h1><p class="sub">Records are stored in this browser on this computer. The Excel workbook is the shared master copy: export after each working session and keep it in the shared drive.</p>' +
-      '<div class="note' + (last ? '' : ' warn') + '">' + (last ? 'Last Excel export from this browser: ' + esc(last.slice(0, 16).replace('T', ' ')) + ' UTC.' : 'No Excel export has been made from this browser yet.') + '</div>' + imp +
+    return '<h1>Import / Export</h1><p class="sub">' + (env.shared
+      ? 'Records are stored in the shared test database of this page: everyone you share the page with sees the same data. Export to Excel for reporting and as a backup.'
+      : 'Records are stored in this browser on this computer. The Excel workbook is the shared master copy: export after each working session and keep it in the shared drive.') + '</p>' +
+      '<div class="note' + (last ? '' : ' warn') + '">' + (last ? 'Last Excel export: ' + esc(last.slice(0, 16).replace('T', ' ')) + ' UTC.' : 'No Excel export has been made yet.') + '</div>' + imp +
       '<div class="cols"><div class="panel"><h2 style="margin-top:0">Export to Excel</h2><p>One workbook with every register (assets, projects, movements, maintenance, disposals), the fixed asset schedule, the ITA block working and the audit log.</p>' +
       (S.can('data.export') ? '<button class="btn primary" data-action="export-all">Export full workbook</button>' : '<em>Not available for your role.</em>') + '</div>' +
       '<div class="panel"><h2 style="margin-top:0">Import from Excel</h2><p>Use the template for bulk entry, or re-import an exported workbook to bring in a colleague’s updates. You see a preview and any errors before anything is saved.</p>' +
       (S.can('data.import') ? '<button class="btn" data-action="template">Download template</button> <label class="btn dark" style="display:inline-block">Choose Excel file<input type="file" id="import-file" accept=".xlsx" hidden></label>' : '<em>Not available for your role.</em>') + '</div>' +
-      '<div class="panel"><h2 style="margin-top:0">Backup and reset</h2><p>A backup file holds everything exactly as it is, including settings. Restore replaces all data in this browser.</p>' +
+      '<div class="panel"><h2 style="margin-top:0">Backup and reset</h2><p>A backup file holds everything exactly as it is, including settings. Restore replaces all current data.</p>' +
       '<button class="btn" data-action="backup">Download backup (.json)</button> ' +
       (S.can('data.reset') ? '<label class="btn" style="display:inline-block">Restore backup<input type="file" id="restore-file" accept=".json" hidden></label> <button class="btn" data-action="demo">Load demo data</button> <button class="btn" data-action="reset">Clear all data</button>' : '') + '</div></div>';
   }
@@ -707,30 +716,46 @@
 
   /* ---------- routing ---------- */
   function render() {
+    if (!ready) return;
     if (!S.user) { main.innerHTML = ''; userModal(); return; }
-    var parts = (location.hash || '#/dashboard').slice(2).split('/'), route = parts[0] || 'dashboard', arg = parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : '';
+    var parts = route.split('/'), view = parts[0] || 'dashboard', arg = parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : '';
     var views = { dashboard: viewDashboard, assets: viewAssets, asset: viewAsset, movements: viewMovements, maintenance: viewMaintenance, disposals: viewDisposals,
       disposal: viewDisposalNote, projects: viewProjects, depreciation: viewDepreciation, data: viewData, setup: viewSetup, audit: viewAudit };
     var active = document.activeElement, keep = active && active.matches && active.matches('[data-filter=q]') ? active.selectionStart : null;
-    main.innerHTML = (views[route] || viewDashboard)(arg);
+    main.innerHTML = (views[view] || viewDashboard)(arg);
     if (keep != null) { var q = main.querySelector('[data-filter=q]'); if (q) { q.focus(); q.setSelectionRange(keep, keep); } }
-    var navKey = { asset: 'assets', disposal: 'disposals' }[route] || route;
+    var navKey = { asset: 'assets', disposal: 'disposals' }[view] || view;
     document.querySelectorAll('#nav a').forEach(function (a) {
       a.classList.toggle('active', a.dataset.nav === navKey);
       a.style.display = a.dataset.perm && !S.can(a.dataset.perm) ? 'none' : '';
     });
     document.getElementById('who').textContent = S.user.name + ' · ' + AMS.ROLES[S.user.role];
-    document.getElementById('version').textContent = 'v' + AMS.VERSION + ' · data stored in this browser';
+    document.getElementById('version').textContent = 'v' + AMS.VERSION + (env.shared ? ' · shared test database' : ' · data stored in this browser');
     var note = document.getElementById('backup-note'), last = st().meta.lastExportAt, changed = st().audit.length ? st().audit[st().audit.length - 1].at : '';
     var due = st().assets.length && (!last || changed > last);
-    note.className = 'backup-note' + (due ? ' due' : '');
-    note.textContent = due ? 'Changes since the last Excel export — export the workbook to update the shared master.' : last ? 'Excel master up to date (' + last.slice(0, 10) + ').' : '';
+    if (env.shared) {
+      var warn = env.readOnly || env.slow;
+      note.className = 'backup-note' + (warn ? ' due' : '');
+      note.textContent = env.readOnly ? 'View-only access: your changes are not saved. Ask the owner for Contributor access.'
+        : env.slow ? 'The shared database cannot be reached yet. What you see may be out of date.'
+          : 'Shared test database: everyone with access sees the same records, live.';
+    } else {
+      note.className = 'backup-note' + (due || env.hosted ? ' due' : '');
+      note.textContent = env.hosted ? 'Shared storage is not available in this view, so records are kept in this browser only.'
+        : due ? 'Changes since the last Excel export — export the workbook to update the shared master.' : last ? 'Excel master up to date (' + last.slice(0, 10) + ').' : '';
+    }
   }
 
   /* ---------- events ---------- */
+  function saveFailed(e) {
+    var code = e && e.code;
+    toast(code === 'declined' ? 'Download cancelled.' : code === 'rate_limited' ? 'A download prompt is already open. Please try again in a moment.'
+      : code === 'host_unavailable' ? 'This app cannot save files. Open the page in a browser on a computer to download.'
+        : 'The file could not be saved from this view.');
+  }
   var actions = {
     'switch-user': function () { userModal(); },
-    'open-asset': function (id) { location.hash = '#/asset/' + encodeURIComponent(id); },
+    'open-asset': function (id) { go('asset/' + encodeURIComponent(id)); },
     'asset-new': function () { assetModal(); },
     'asset-receive': function () { assetModal(null, { acquisitionMode: 'Received from partner', fundingType: 'In-kind / transferred in', ownership: 'Funder', endOfProjectTerm: 'To be confirmed', status: 'In store' }); },
     'asset-edit': function (id) { assetModal(id); },
@@ -748,9 +773,9 @@
     'master-del': function (id, el) { masterDelete(el.dataset.list, id); },
     'filter-project': function (id) { filters = { q: '', project: id, category: '', ownership: '', status: 'active', location: '', mine: false }; },
     'print': function () { window.print(); },
-    'export-all': function () { AMS.excel.exportAll().then(function () { toast('Workbook exported.'); render(); }); },
-    'export-list': function () { AMS.excel.exportAssets(filteredAssets()).then(function () { toast('List exported.'); }); },
-    'template': function () { AMS.excel.template(); },
+    'export-all': function () { AMS.excel.exportAll().then(function () { toast('Workbook exported.'); render(); }, saveFailed); },
+    'export-list': function () { AMS.excel.exportAssets(filteredAssets()).then(function () { toast('List exported.'); }, saveFailed); },
+    'template': function () { AMS.excel.template().then(null, saveFailed); },
     'import-cancel': function () { pendingImport = null; render(); },
     'import-apply': function () {
       var mode = (document.querySelector('input[name=impmode]:checked') || {}).value || 'merge', p = pendingImport;
@@ -759,18 +784,16 @@
       else go();
     },
     'backup': function () {
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(st(), null, 1)], { type: 'application/json' }));
-      a.download = 'NAAMII_AMS_backup_' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove();
+      AMS.saveFile('NAAMII_AMS_backup_' + today() + '.json', new Blob([JSON.stringify(st(), null, 1)], { type: 'application/json' })).then(null, saveFailed);
     },
     'demo': function () {
-      confirmModal('Load demo data', 'This replaces everything in this browser with fictional sample records for training. Export your real data first. Continue?', function () {
-        S.state = AMS.demoData(); toast('Demo data loaded.');
+      confirmModal('Load demo data', 'This replaces every record' + (env.shared ? ' in the shared database, for all testers,' : ' in this browser') + ' with fictional sample records for training. Export your real data first. Continue?', function () {
+        var demo = AMS.demoData(); demo.audit = []; S.replaceState(demo); S.audit('Load', 'Demo data', '', 'Fictional sample records loaded'); toast('Demo data loaded.');
       }, 'Load demo data');
     },
     'reset': function () {
-      confirmModal('Clear all data', 'This permanently removes every record and setting from this browser. Export a backup first. Continue?', function () {
-        S.state = AMS.blankState(); S.audit('Reset', 'All data', '', 'All data cleared');
+      confirmModal('Clear all data', 'This permanently removes every record and setting' + (env.shared ? ' from the shared database, for all testers' : ' from this browser') + '. Export a backup first. Continue?', function () {
+        S.replaceState(AMS.blankState()); S.audit('Reset', 'All data', '', 'All data cleared');
       }, 'Clear everything');
     }
   };
@@ -780,7 +803,10 @@
     var fn = actions[el.dataset.action]; if (!fn) return;
     if (el.tagName !== 'A') e.preventDefault();
     fn(el.dataset.id || '', el);
-    if (el.dataset.action === 'filter-project') { if (location.hash === '#/assets') render(); }
+  });
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a[href^="#/"]'); if (!a) return;
+    e.preventDefault(); go(a.getAttribute('href').slice(2));
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-action]')) e.target.click();
@@ -801,8 +827,8 @@
       t.files[0].text().then(function (txt) {
         var data = JSON.parse(txt);
         if (!data || !Array.isArray(data.assets) || !data.settings) throw new Error('bad');
-        confirmModal('Restore backup', 'This replaces all data in this browser with the backup (' + data.assets.length + ' assets). Continue?', function () {
-          S.state = S.normalise(data); S.audit('Restore', 'Backup', '', 'Backup file restored');
+        confirmModal('Restore backup', 'This replaces all current data with the backup (' + data.assets.length + ' assets). Continue?', function () {
+          S.replaceState(data); S.audit('Restore', 'Backup', '', 'Backup file restored');
         }, 'Restore');
       }).catch(function () { toast('That is not a valid backup file.'); });
     }
@@ -821,8 +847,28 @@
     S.audit('Update', 'Settings', '', 'Accounting settings changed');
     S.save(); toast('Settings saved.'); render();
   });
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', function () {
+    if (env.hosted || location.hash.indexOf('#/') !== 0) return;
+    route = location.hash.slice(2) || 'dashboard'; render(); window.scrollTo(0, 0);
+  });
 
-  S.load().then(render);
+  /* Shared mode: another tester changed something. Refresh unless this person is in the middle of a form. */
+  var remoteTimer = null;
+  S.onRemoteChange = function () {
+    clearTimeout(remoteTimer);
+    remoteTimer = setTimeout(function () {
+      var el = document.activeElement;
+      if (modal.open || (el && el.closest && el.closest('#settings-form'))) return;
+      render();
+    }, 250);
+  };
+  S.onWriteError = function (msg) { toast(msg); render(); };
+
+  main.innerHTML = '<p class="sub">Loading the asset register…</p>';
+  S.load().then(function () {
+    ready = true;
+    if (!env.hosted && location.hash.indexOf('#/') === 0) route = location.hash.slice(2);
+    render();
+  });
   AMS.render = render;
 })();

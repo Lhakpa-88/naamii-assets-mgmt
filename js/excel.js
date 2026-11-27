@@ -96,11 +96,7 @@
 
   function download(wb, filename) {
     return wb.xlsx.writeBuffer().then(function (buf) {
-      var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = filename;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      return AMS.saveFile(filename, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     });
   }
 
@@ -298,9 +294,10 @@
     apply: function (parsed, mode) {
       var s = store.state, now = new Date().toISOString();
       AMS.SHEETS.forEach(function (def) {
+        s = store.state;
         var rows = parsed.data[def.key];
         if (!rows) return;
-        if (mode === 'replace') s[def.key] = [];
+        if (mode === 'replace') store.replaceList(def.key);
         rows.forEach(function (rec) {
           if (def.key === 'assets') {
             if (!rec.id) rec.id = store.assetId(rec.categoryCode);

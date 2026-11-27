@@ -87,6 +87,12 @@ Points to note on the tax working:
 
 On a GitHub Free account, Pages works only for **public** repositories, and a Pages site is reachable by anyone who has the link. This repository holds only the program, never NAAMII's records, so making it public does not expose asset data. If you prefer to keep it private, the app can also be run by downloading the folder and opening `index.html`, or from any internal web server.
 
+## Testing as a shared page in Claude
+
+The same files are also published as a Claude artifact for team testing. In that mode the app uses the page's shared database instead of browser storage, so every tester sees the same records live, and Excel files are saved through the page's download prompt. Printing is not available inside the Claude viewer; use the GitHub or server copy to print notes and schedules.
+
+SharePoint Online is not used for hosting: it does not run custom HTML/JavaScript pages from a document library unless a SharePoint Administrator allows custom script on the site, and that permission is temporary.
+
 ## Moving to NAAMII's server later
 
 Copy the folder to any web server (IIS, Nginx, Apache, Azure Static Web Apps). For shared live data and real sign-in, replace `load()` and `save()` in `js/store.js` with calls to a database API; the rest of the app reads and writes through those two functions.
@@ -98,7 +104,7 @@ index.html            page shell
 css/app.css           styles (NAAMII Brand Book 2026 colours)
 js/config.js          fields, drop-down values, roles and permissions, defaults
 js/depreciation.js    fiscal year, straight-line and ITA pool calculations
-js/store.js           browser storage and audit trail
+js/store.js           storage (browser, or shared database when hosted in Claude) and audit trail
 js/excel.js           Excel export, template and import
 js/app.js             screens, forms and workflows
 js/demo.js            fictional sample data for training
